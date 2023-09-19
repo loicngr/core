@@ -25,7 +25,6 @@ use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
 use Doctrine\Bundle\MongoDBBundle\DoctrineMongoDBBundle;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\OptimisticLockException;
-use Elasticsearch\Client as ElasticsearchClient;
 use GraphQL\GraphQL;
 use Symfony\Bundle\FullStack;
 use Symfony\Bundle\MakerBundle\MakerBundle;
@@ -84,6 +83,7 @@ final class Configuration implements ConfigurationInterface
                     ->defaultValue('0.0.0')
                 ->end()
                 ->booleanNode('show_webby')->defaultTrue()->info('If true, show Webby on the documentation page')->end()
+                ->booleanNode('event_listeners_backward_compatibility_layer')->defaultTrue()->info('If true API Platform uses Symfony event listeners instead of providers and processors.')->end() // TODO: Add link to the documentation
                 ->scalarNode('name_converter')->defaultNull()->info('Specify a name converter to use.')->end()
                 ->scalarNode('asset_package')->defaultNull()->info('Specify an asset package name to use.')->end()
                 ->scalarNode('path_segment_name_generator')->defaultValue('api_platform.metadata.path_segment_name_generator.underscore')->info('Specify a path name generator to use.')->end()
@@ -109,6 +109,7 @@ final class Configuration implements ConfigurationInterface
                 ->booleanNode('enable_entrypoint')->defaultTrue()->info('Enable the entrypoint')->end()
                 ->booleanNode('enable_docs')->defaultTrue()->info('Enable the docs')->end()
                 ->booleanNode('enable_profiler')->defaultTrue()->info('Enable the data collector and the WebProfilerBundle integration.')->end()
+                ->booleanNode('keep_legacy_inflector')->defaultTrue()->info('Keep doctrine/inflector instead of symfony/string to generate plurals for routes.')->end()
                 ->arrayNode('collection')
                     ->addDefaultsIfNotSet()
                     ->children()
@@ -156,12 +157,16 @@ final class Configuration implements ConfigurationInterface
         $this->addExceptionToStatusSection($rootNode);
 
         $this->addFormatSection($rootNode, 'formats', [
-            'jsonld' => ['mime_types' => ['application/ld+json']],
-            'json' => ['mime_types' => ['application/json']], // Swagger support
-            'html' => ['mime_types' => ['text/html']], // Swagger UI support
         ]);
         $this->addFormatSection($rootNode, 'patch_formats', [
             'json' => ['mime_types' => ['application/merge-patch+json']],
+        ]);
+        $this->addFormatSection($rootNode, 'docs_formats', [
+            'jsonopenapi' => ['mime_types' => ['application/vnd.openapi+json']],
+            'yamlopenapi' => ['mime_types' => ['application/vnd.openapi+yaml']],
+            'json' => ['mime_types' => ['application/json']], // this is only for legacy reasons, use jsonopenapi instead
+            'jsonld' => ['mime_types' => ['application/ld+json']],
+            'html' => ['mime_types' => ['text/html']],
         ]);
         $this->addFormatSection($rootNode, 'error_formats', [
             'jsonproblem' => ['mime_types' => ['application/problem+json']],
@@ -235,6 +240,9 @@ final class Configuration implements ConfigurationInterface
                         ->arrayNode('graphql_playground')
                             ->{class_exists(GraphQL::class) && class_exists(TwigBundle::class) ? 'canBeDisabled' : 'canBeEnabled'}()
                         ->end()
+                        ->arrayNode('introspection')
+                            ->canBeDisabled()
+                        ->end()
                         ->scalarNode('nesting_separator')->defaultValue('_')->info('The separator to use to filter nested fields.')->end()
                         ->arrayNode('collection')
                             ->addDefaultsIfNotSet()
@@ -282,6 +290,10 @@ final class Configuration implements ConfigurationInterface
                         ->end()
                         ->arrayNode('api_keys')
                             ->useAttributeAsKey('key')
+                            ->validate()
+                                ->ifTrue(static fn($v): bool => (bool) array_filter(array_keys($v), fn($item) => !preg_match('/^[a-zA-Z0-9._-]+$/', $item)))
+                                ->thenInvalid('The api keys "key" is not valid according to the pattern enforced by OpenAPI 3.1 ^[a-zA-Z0-9._-]+$.')
+                            ->end()
                             ->prototype('array')
                                 ->children()
                                     ->scalarNode('name')
@@ -411,7 +423,7 @@ final class Configuration implements ConfigurationInterface
                             ->validate()
                                 ->ifTrue()
                                 ->then(static function (bool $v): bool {
-                                    if (!class_exists(ElasticsearchClient::class)) {
+                                    if (!(class_exists(\Elasticsearch\Client::class) || class_exists(\Elastic\Elasticsearch\Client::class))) {
                                         throw new InvalidConfigurationException('The elasticsearch/elasticsearch package is required for Elasticsearch support.');
                                     }
 

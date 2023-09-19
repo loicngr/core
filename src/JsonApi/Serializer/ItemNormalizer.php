@@ -26,6 +26,7 @@ use ApiPlatform\Serializer\AbstractItemNormalizer;
 use ApiPlatform\Serializer\CacheKeyTrait;
 use ApiPlatform\Serializer\ContextTrait;
 use ApiPlatform\Symfony\Security\ResourceAccessCheckerInterface;
+use Symfony\Component\ErrorHandler\Exception\FlattenException;
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use Symfony\Component\Serializer\Exception\LogicException;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
@@ -62,7 +63,7 @@ final class ItemNormalizer extends AbstractItemNormalizer
      */
     public function supportsNormalization(mixed $data, string $format = null, array $context = []): bool
     {
-        return self::FORMAT === $format && parent::supportsNormalization($data, $format, $context);
+        return self::FORMAT === $format && parent::supportsNormalization($data, $format, $context) && !($data instanceof \Exception || $data instanceof FlattenException);
     }
 
     public function getSupportedTypes($format): array
@@ -103,7 +104,7 @@ final class ItemNormalizer extends AbstractItemNormalizer
         }
 
         // Get and populate relations
-        $allRelationshipsData = $this->getComponents($object, $format, $context)['relationships'];
+        ['relationships' => $allRelationshipsData, 'links' => $links] = $this->getComponents($object, $format, $context);
         $populatedRelationContext = $context;
         $relationshipsData = $this->getPopulatedRelations($object, $format, $populatedRelationContext, $allRelationshipsData);
 
@@ -125,7 +126,13 @@ final class ItemNormalizer extends AbstractItemNormalizer
             $resourceData['relationships'] = $relationshipsData;
         }
 
-        $document = ['data' => $resourceData];
+        $document = [];
+
+        if ($links) {
+            $document['links'] = $links;
+        }
+
+        $document['data'] = $resourceData;
 
         if ($includedResourcesData) {
             $document['included'] = $includedResourcesData;
@@ -284,32 +291,56 @@ final class ItemNormalizer extends AbstractItemNormalizer
                 ->propertyMetadataFactory
                 ->create($context['resource_class'], $attribute, $options);
 
-            // TODO: 3.0 support multiple types, default value of types will be [] instead of null
-            $type = $propertyMetadata->getBuiltinTypes()[0] ?? null;
-            $isOne = $isMany = false;
+            $types = $propertyMetadata->getBuiltinTypes() ?? [];
 
-            if (null !== $type) {
+            // prevent declaring $attribute as attribute if it's already declared as relationship
+            $isRelationship = false;
+
+            foreach ($types as $type) {
+                $isOne = $isMany = false;
+
                 if ($type->isCollection()) {
                     $collectionValueType = $type->getCollectionValueTypes()[0] ?? null;
                     $isMany = $collectionValueType && ($className = $collectionValueType->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
                 } else {
                     $isOne = ($className = $type->getClassName()) && $this->resourceClassResolver->isResourceClass($className);
                 }
+
+                if (!isset($className) || !$isOne && !$isMany) {
+                    // don't declare it as an attribute too quick: maybe the next type is a valid resource
+                    continue;
+                }
+
+                $relation = [
+                    'name' => $attribute,
+                    'type' => $this->getResourceShortName($className),
+                    'cardinality' => $isOne ? 'one' : 'many',
+                ];
+
+                // if we specify the uriTemplate, generates its value for link definition
+                // @see ApiPlatform\Serializer\AbstractItemNormalizer:getAttributeValue logic for intentional duplicate content
+                if ($itemUriTemplate = $propertyMetadata->getUriTemplate()) {
+                    $attributeValue = $this->propertyAccessor->getValue($object, $attribute);
+                    $resourceClass = $this->resourceClassResolver->getResourceClass($attributeValue, $className);
+                    $childContext = $this->createChildContext($context, $attribute, $format);
+                    unset($childContext['iri'], $childContext['uri_variables'], $childContext['resource_class'], $childContext['operation']);
+
+                    $operation = $this->resourceMetadataCollectionFactory->create($resourceClass)->getOperation(
+                        operationName: $itemUriTemplate,
+                        httpOperation: true
+                    );
+
+                    $components['links'][$attribute] = $this->iriConverter->getIriFromResource($object, UrlGeneratorInterface::ABS_PATH, $operation, $childContext);
+                }
+
+                $components['relationships'][] = $relation;
+                $isRelationship = true;
             }
 
-            if (!isset($className) || !$isOne && !$isMany) {
+            // if all types are not relationships, declare it as an attribute
+            if (!$isRelationship) {
                 $components['attributes'][] = $attribute;
-
-                continue;
             }
-
-            $relation = [
-                'name' => $attribute,
-                'type' => $this->getResourceShortName($className),
-                'cardinality' => $isOne ? 'one' : 'many',
-            ];
-
-            $components['relationships'][] = $relation;
         }
 
         if (false !== $context['cache_key']) {

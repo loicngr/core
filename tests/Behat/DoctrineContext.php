@@ -62,6 +62,7 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Document\FourthLevel as FourthLevelDoc
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Greeting as GreetingDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\InitializeInput as InitializeInputDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\IriOnlyDummy as IriOnlyDummyDocument;
+use ApiPlatform\Tests\Fixtures\TestBundle\Document\LinkHandledDummy as LinkHandledDummyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\MaxDepthDummy as MaxDepthDummyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\MultiRelationsDummy as MultiRelationsDummyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\MultiRelationsRelatedDummy as MultiRelationsRelatedDummyDocument;
@@ -76,6 +77,9 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Document\PersonToPet as PersonToPetDoc
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Pet as PetDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Product as ProductDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Program as ProgramDocument;
+use ApiPlatform\Tests\Fixtures\TestBundle\Document\PropertyCollectionIriOnly as PropertyCollectionIriOnlyDocument;
+use ApiPlatform\Tests\Fixtures\TestBundle\Document\PropertyCollectionIriOnlyRelation as PropertyCollectionIriOnlyRelationDocument;
+use ApiPlatform\Tests\Fixtures\TestBundle\Document\PropertyUriTemplateOneToOneRelation as PropertyUriTemplateOneToOneRelationDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Question as QuestionDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\RelatedDummy as RelatedDummyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\RelatedOwnedDummy as RelatedOwnedDummyDocument;
@@ -84,6 +88,7 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Document\RelatedSecuredDummy as Relate
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\RelatedToDummyFriend as RelatedToDummyFriendDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\RelationEmbedder as RelationEmbedderDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\SecuredDummy as SecuredDummyDocument;
+use ApiPlatform\Tests\Fixtures\TestBundle\Document\SeparatedEntity as SeparatedEntityDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\SoMany as SoManyDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\Taxon as TaxonDocument;
 use ApiPlatform\Tests\Fixtures\TestBundle\Document\ThirdLevel as ThirdLevelDocument;
@@ -147,6 +152,7 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Entity\IriOnlyDummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Issue5722\Event;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Issue5722\ItemLog;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Issue5735\Group;
+use ApiPlatform\Tests\Fixtures\TestBundle\Entity\LinkHandledDummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\MaxDepthDummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\MultiRelationsDummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\MultiRelationsRelatedDummy;
@@ -162,6 +168,9 @@ use ApiPlatform\Tests\Fixtures\TestBundle\Entity\PersonToPet;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Pet;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Product;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Program;
+use ApiPlatform\Tests\Fixtures\TestBundle\Entity\PropertyCollectionIriOnly;
+use ApiPlatform\Tests\Fixtures\TestBundle\Entity\PropertyCollectionIriOnlyRelation;
+use ApiPlatform\Tests\Fixtures\TestBundle\Entity\PropertyUriTemplateOneToOneRelation;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\Question;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\RamseyUuidDummy;
 use ApiPlatform\Tests\Fixtures\TestBundle\Entity\RelatedDummy;
@@ -1953,6 +1962,27 @@ final class DoctrineContext implements Context
     }
 
     /**
+     * @Given there are propertyCollectionIriOnly with relations
+     */
+    public function thereAreResourcesWithPropertyUriTemplates(): void
+    {
+        $propertyCollectionIriOnlyRelation = $this->isOrm() ? new PropertyCollectionIriOnlyRelation() : new PropertyCollectionIriOnlyRelationDocument();
+        $propertyCollectionIriOnlyRelation->name = 'asb';
+
+        $propertyToOneRelation = $this->isOrm() ? new PropertyUriTemplateOneToOneRelation() : new PropertyUriTemplateOneToOneRelationDocument();
+        $propertyToOneRelation->name = 'xarguš';
+
+        $propertyCollectionIriOnly = $this->isOrm() ? new PropertyCollectionIriOnly() : new PropertyCollectionIriOnlyDocument();
+        $propertyCollectionIriOnly->addPropertyCollectionIriOnlyRelation($propertyCollectionIriOnlyRelation);
+        $propertyCollectionIriOnly->setToOneRelation($propertyToOneRelation);
+
+        $this->manager->persist($propertyCollectionIriOnly);
+        $this->manager->persist($propertyCollectionIriOnlyRelation);
+        $this->manager->persist($propertyToOneRelation);
+        $this->manager->flush();
+    }
+
+    /**
      * @Given there are :nb absoluteUrlDummy objects with a related absoluteUrlRelationDummy
      */
     public function thereAreAbsoluteUrlDummies(int $nb): void
@@ -2055,7 +2085,7 @@ final class DoctrineContext implements Context
     public function thereAreSeparatedEntities(int $nb): void
     {
         for ($i = 1; $i <= $nb; ++$i) {
-            $entity = new SeparatedEntity();
+            $entity = $this->buildSeparatedEntity();
             $entity->value = (string) $i;
             $this->manager->persist($entity);
         }
@@ -2199,6 +2229,18 @@ final class DoctrineContext implements Context
             $this->manager->persist($log);
         }
 
+        $this->manager->flush();
+    }
+
+    /**
+     * @Given there are a few link handled dummies
+     */
+    public function thereAreAFewLinkHandledDummies(): void
+    {
+        $this->manager->persist($this->buildLinkHandledDummy('foo'));
+        $this->manager->persist($this->buildLinkHandledDummy('bar'));
+        $this->manager->persist($this->buildLinkHandledDummy('baz'));
+        $this->manager->persist($this->buildLinkHandledDummy('foz'));
         $this->manager->flush();
     }
 
@@ -2545,5 +2587,15 @@ final class DoctrineContext implements Context
     private function buildVideoGame(): VideoGame|VideoGameDocument
     {
         return $this->isOrm() ? new VideoGame() : new VideoGameDocument();
+    }
+
+    private function buildSeparatedEntity(): SeparatedEntity|SeparatedEntityDocument
+    {
+        return $this->isOrm() ? new SeparatedEntity() : new SeparatedEntityDocument();
+    }
+
+    private function buildLinkHandledDummy(string $slug): LinkHandledDummy|LinkHandledDummyDocument
+    {
+        return $this->isOrm() ? new LinkHandledDummy($slug) : new LinkHandledDummyDocument($slug);
     }
 }

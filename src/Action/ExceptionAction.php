@@ -16,9 +16,9 @@ namespace ApiPlatform\Action;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\HttpOperation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
+use ApiPlatform\State\Util\OperationRequestInitiatorTrait;
+use ApiPlatform\Symfony\Util\RequestAttributesExtractor;
 use ApiPlatform\Util\ErrorFormatGuesser;
-use ApiPlatform\Util\OperationRequestInitiatorTrait;
-use ApiPlatform\Util\RequestAttributesExtractor;
 use Symfony\Component\ErrorHandler\Exception\FlattenException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -29,6 +29,8 @@ use Symfony\Component\Serializer\SerializerInterface;
  *
  * @author Baptiste Meyer <baptiste.meyer@gmail.com>
  * @author Kévin Dunglas <dunglas@gmail.com>
+ *
+ * @deprecated since API Platform 3 and Error resource is used {@see ApiPlatform\Symfony\EventListener\ErrorListener}
  */
 final class ExceptionAction
 {
